@@ -1,3 +1,8 @@
+/* proj1A.c
+ * Author: Nate Koch
+ * Date: 1/16/23
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 
