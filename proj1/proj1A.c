@@ -14,31 +14,39 @@ typedef struct
 
 void WritePNM(Image *img);
 
-//void AssignPixels(Image *img, int colMin, int colMax, int rowMin, int rowMax, 
-                   // unsigned char R, unsigned char G, unsigned char B);
+void AssignPixels(Image *img, int colMin, int colMax, int rowMin, int rowMax, 
+                    unsigned char R, unsigned char G, unsigned char B);
 
 int main(void)
 {
-    
+    // Create the Image struct
     Image *img = NULL;
 
     img = malloc(sizeof(Image));
     img->x = 300;
     img->y = 300;
     img->data = malloc(sizeof(Pixel) * img->x * img->y);
-    
-    int index = 0;
-    for (int row = 0; row < 300; row++)
-    {
-        for (int col = 0; col < 300; col++) 
-        {
-            img->data[index].R = 255;
-            img->data[index].G = 255;
-            img->data[index].B = 255;
-            index++;
-        }
-    }
 
+    // Black Square
+    AssignPixels(img, 0, 100, 0, 100, 0, 0, 0);
+    // Gray Square
+    AssignPixels(img, 100, 200, 0, 100, 128, 128, 128);
+    // White Square
+    AssignPixels(img, 200, 300, 0, 100, 255, 255, 255); 
+    // Red Square
+    AssignPixels(img, 0, 100, 100, 200, 255, 0, 0);
+    // Green Square
+    AssignPixels(img, 100, 200, 100, 200, 0, 255, 0);
+    // Blue Square
+    AssignPixels(img, 200, 300, 100, 200, 0, 0, 255);
+    // Pink Square
+    AssignPixels(img, 0, 100, 200, 300, 255, 0, 255);
+    // Cyan Square
+    AssignPixels(img, 100, 200, 200, 300, 0, 255, 255);
+    // Yellow Square
+    AssignPixels(img, 200, 300, 200, 300, 255, 255, 0);
+
+    // Format and create the PNM file
     WritePNM(img);
 
     free(img->data);
@@ -63,4 +71,18 @@ void WritePNM(Image *img)
 
     fwrite(img->data, sizeof(Pixel), img->x * img->y, pnm);
     fclose(pnm);
+}
+
+void AssignPixels(Image *img, int colMin, int colMax, int rowMin, int rowMax, 
+                    unsigned char R, unsigned char G, unsigned char B)
+{
+    for (int row = rowMin; row < rowMax; row++)
+    {
+        for (int col = colMin; col < colMax; col++) 
+        {
+            img->data[row*img->x+col].R = R;
+            img->data[row*img->x+col].G = G;
+            img->data[row*img->x+col].B = B;
+        }
+    }
 }
