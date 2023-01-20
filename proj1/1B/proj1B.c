@@ -105,13 +105,16 @@ void AssignPixels(Image *img, int colMin, int colMax, int rowMin, int rowMax,
 {
     int index;
     for (int row = rowMin; row < rowMax; row++)
-    {
+    { 
+    
         if (rowMin < 0) rowMin = 0;
         if (rowMax > img->y) rowMax = img->y;
         if (colMin < 0) colMin = 0;
         if (colMax > img->x) colMax = img->x;
+        
 
         int newRow = img->y - row - 1;
+        if (newRow < 0) continue;
         for (int col = colMin; col < colMax; col++) 
         {
             index = newRow*img->x+col;
