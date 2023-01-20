@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+#define DEBUG 0
+
 double C441(double f)
 {
     return ceil(f-0.00001);
@@ -64,14 +66,16 @@ int main(void)
 
     tl = GetTriangles();
 
-    //for (int i = 0 ; i < tl->numTriangles ; i++)
-        //RasterizeGoingUpTriangle(tl->triangles+i, &img);
-    for (int i = 0 ; i < 1 ; i++)
-        RasterizeGoingUpTriangle(tl->triangles+i, img); 
+    for (int i = 0; i < tl->numTriangles; i++)
+        RasterizeGoingUpTriangle(tl->triangles+i, img);
+    //RasterizeGoingUpTriangle(tl->triangles+99, img); 
 
     // Format and create the PNM file
     WritePNM(img);
 
+    free(tl->triangles);
+    free(tl);
+    
     free(img->data);
     free(img);
 
@@ -80,7 +84,7 @@ int main(void)
 
 void WritePNM(Image *img) 
 {
-    FILE *pnm = fopen("proj1A_out.pnm", "w");
+    FILE *pnm = fopen("proj1B_out.pnm", "w");
 
     if (pnm == NULL) 
     {
@@ -99,13 +103,21 @@ void WritePNM(Image *img)
 void AssignPixels(Image *img, int colMin, int colMax, int rowMin, int rowMax, 
                     unsigned char R, unsigned char G, unsigned char B)
 {
+    int index;
     for (int row = rowMin; row < rowMax; row++)
     {
+        if (rowMin < 0) rowMin = 0;
+        if (rowMax > img->y) rowMax = img->y;
+        if (colMin < 0) colMin = 0;
+        if (colMax > img->x) colMax = img->x;
+
+        int newRow = img->y - row - 1;
         for (int col = colMin; col < colMax; col++) 
         {
-            img->data[row*img->x+col].R = R;
-            img->data[row*img->x+col].G = G;
-            img->data[row*img->x+col].B = B;
+            index = newRow*img->x+col;
+            img->data[index].R = R;
+            img->data[index].G = G;
+            img->data[index].B = B;
         }
     }
 }
@@ -141,4 +153,91 @@ TriangleList* GetTriangles(void)
    }
 
    return tl;
+}
+
+void RasterizeGoingUpTriangle(Triangle *t, Image *img)
+{
+    if (DEBUG) printf("Triangle: (%f, %f), (%f, %f), (%f, %f)\n", 
+            t->X[0], t->Y[0], t->X[1], t->Y[1], t->X[2], t->Y[2]);
+    
+    int top, left, right;
+
+    // determine top
+    top = 0;
+    for (int i = 1; i < 3; i++)
+    {
+        if (t->Y[top] < t->Y[i]) top = i;
+    }
+
+    // determine left and right
+    int no_val = 1;
+    for (int i = 0; i < 3; i++) 
+    {
+        if (i == top) continue;
+        if (no_val) 
+        {
+            left = i;
+            no_val = 0;
+            continue;
+        }
+        if (t->X[left] > t->X[i])
+        {
+            int temp = left;
+            left = i;
+            right = temp;
+        }
+        else
+        {
+            right = i;
+        }
+    }
+
+    if (DEBUG) printf("Identified: top = %d, bottom left = %d, bottom right = %d\n",
+                top, left, right);
+
+    // Determine rowMin & rowMax
+    double rowMin, rowMax;
+    rowMin = rowMax = t->Y[0];
+    for (int i = 1; i < 3; i++)
+    {
+        if (rowMin > t->Y[i]) rowMin = t->Y[i];
+        if (rowMax < t->Y[i]) rowMax = t->Y[i];
+    }
+    rowMin = C441(rowMin);
+    if (rowMin == -0.0) rowMin += 0.0; // probably not totally necessary
+    rowMax = F441(rowMax);
+
+    if (DEBUG) printf("Scanlines go from %.0f to %.0f\n", rowMin, rowMax);
+
+    // TODO add check for out of bounds point
+    for (int r = rowMin; r <= rowMax; r++)
+    {
+        double leftEnd, rightEnd, leftSlope, rightSlope, bLeft, bRight;
+        
+        // left side
+        leftSlope = (t->Y[left] - t->Y[top]) / (t->X[left] - t->X[top]); 
+        bLeft = (t->Y[top] - leftSlope * t->X[top]);
+        leftEnd = (r - bLeft) / leftSlope;
+
+        // right side
+        rightSlope = (t->Y[right] - t->Y[top]) / (t->X[right] - t->X[top]);
+        bRight = (t->Y[top] - rightSlope * t->X[top]);
+        rightEnd = (r - bRight) / rightSlope;
+
+        int c = C441(leftEnd);
+        int floor = F441(rightEnd);
+        
+        if (DEBUG) printf("Scanline %d: intercepts go from %d to %d\n",
+                            r, c, floor);
+        
+        for (; c <= floor; c++)
+        {
+            if (c < 0) c = 0;
+            if (r < 0) r = 0;
+            if (floor > img->x) floor = img->x-1;
+            if (c > img->y) c = img->y-1;
+            AssignPixels(img, c, floor+1, r, r+1, 
+                            t->color[0], t->color[1], t->color[2]);
+        }
+    }
 }
