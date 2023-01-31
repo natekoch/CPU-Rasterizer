@@ -8,7 +8,7 @@
 #include <math.h>
 #include <string.h>
 
-#define DEBUG 0
+int DEBUG = 0;
 
 double C441(double f)
 {
@@ -46,8 +46,6 @@ typedef struct
     double *zbuffer;
 } Image;
 
-void swap(int v1, int v2);
-
 void WritePNM(Image *img);
 
 void ColorPixel(Image *img, int row, int col, double R, double G, double B, double Z);
@@ -55,8 +53,6 @@ void ColorPixel(Image *img, int row, int col, double R, double G, double B, doub
 TriangleList* Get3DTriangles(void);
 
 void RasterizeTriangle(Triangle *t, Image *img);
-
-static double *zbuffer;
 
 int main(void)
 {
@@ -75,9 +71,17 @@ int main(void)
     TriangleList* tl = NULL;
 
     tl = Get3DTriangles();
-
+    
+    
     for (int i = 0; i < tl->numTriangles; i++)
+    {
+        if (i == 9471)
+          DEBUG = 1;
+        else
+          DEBUG = 0;
+        if (DEBUG) printf("Working on triangle %d\n", i);
         RasterizeTriangle(tl->triangles+i, img);
+    }
 
     free(tl->triangles);
     free(tl);
@@ -90,13 +94,6 @@ int main(void)
     free(img);
 
     return 0; 
-}
-
-void swap(int v1, int v2)
-{
-    int temp = v1;
-    v1 = v2;
-    v2 = temp;
 }
 
 void WritePNM(Image *img) 
@@ -246,7 +243,6 @@ Get3DTriangles()
        tl->triangles[i].colors[2][0] = r[2];
        tl->triangles[i].colors[2][1] = g[2];
        tl->triangles[i].colors[2][2] = b[2];
-       //printf("Read triangle (%f, %f, %f) / (%f, %f, %f), (%f, %f, %f) / (%f, %f, %f), (%f, %f, %f) / (%f, %f, %f)\n", x1, y1, z1, r[0], g[0], b[0], x2, y2, z2, r[1], g[1], b[1], x3, y3, z3, r[2], g[2], b[2]);
    }
 
    free(buffer);
@@ -255,6 +251,7 @@ Get3DTriangles()
 
 void RasterizeTriangle(Triangle *t, Image *img)
 {
+    int first = 1;
     for (int loop = 0; loop < 2; loop++)
     {
         int workOnTopPart = (loop == 0 ? 1 : 0);
@@ -262,8 +259,18 @@ void RasterizeTriangle(Triangle *t, Image *img)
         int swap;
         double rowMin, rowMax;
         double leftEnd, rightEnd, leftSlope, rightSlope, bLeft, bRight;
-        double tProp, zLeftEnd, zRightEnd, zPixel;
+        double tPropLeft, tPropRight, tPropPixel;
+        double zLeftEnd, zRightEnd, zPixel;
+        double colorLeftEnd[3], colorRightEnd[3], colorPixel[3];
         int leftIntercept, rightIntercept, topOrBottomScanline, middleScanline;
+
+        if (DEBUG && first) 
+        {
+            printf("Triangle: (%f, %f, %f) / (%f, %f, %f),", t->X[0], t->Y[0], t->Z[0], t->colors[0][0], t->colors[0][1], t->colors[0][2]);
+            printf(" (%f, %f, %f) / (%f, %f, %f),", t->X[1], t->Y[1], t->Z[1], t->colors[1][0], t->colors[1][1], t->colors[1][2]);
+            printf(" (%f, %f, %f) / (%f, %f, %f)\n", t->X[2], t->Y[2], t->Z[2], t->colors[2][0], t->colors[2][1], t->colors[2][2]);
+            first = 0;
+        }
 
         // determine top or bottom
         topOrBottom = 0;
@@ -315,8 +322,14 @@ void RasterizeTriangle(Triangle *t, Image *img)
         rowMin = C441(rowMin);
         rowMax = F441(rowMax);
 
+        if (DEBUG && rowMin < rowMax)
+        {
+            printf("Scanlines go from %.0f to %.0f\n", rowMin, rowMax);
+        }
+
         for (int r = rowMin; r <= rowMax; r++)
         {   
+
             // left side
             if (t->Y[left] == t->Y[topOrBottom]) continue;
             leftSlope   =   (t->Y[left] - t->Y[topOrBottom]) / 
@@ -338,6 +351,10 @@ void RasterizeTriangle(Triangle *t, Image *img)
                 double temp = leftEnd;
                 leftEnd = rightEnd;
                 rightEnd = temp;
+
+                swap = left;
+                left = right;
+                right = swap;
             }
 
             leftIntercept = C441(leftEnd);
@@ -352,25 +369,61 @@ void RasterizeTriangle(Triangle *t, Image *img)
             if ((!workOnTopPart) && (r > middleScanline || r < topOrBottomScanline)) continue;
 
             // check intercepts
-            if (leftIntercept > rightIntercept) continue;
+            //if (leftIntercept > rightIntercept) printf("r: %d", r);
            
             // interpolate z at left and right ends
             // F(X) = F(A) + t*(F(B) - F(A))
             // t = (X-A)/(B-A)
-            tProp = (leftEnd - t->X[left]) / (t->X[topOrBottom] - t->X[left]);
-            zLeftEnd = t->Z[left] + tProp * (t->Z[topOrBottom] - t->Z[left]);
-            if (leftEnd == t->X[left] || t->X[topOrBottom] == t->X[left]) 
-                zLeftEnd = t->Z[left];
-            tProp = (rightEnd - t->X[right]) / (t->X[topOrBottom] - t->X[right]);
-            zRightEnd = t->Z[right] + tProp * (t->Z[topOrBottom] - t->Z[right]);
-            if (rightEnd == t->X[right] || t->X[topOrBottom] == t->X[right])
-                zRightEnd = t->Z[right];
+            tPropLeft = (r - t->Y[left]) / (t->Y[topOrBottom] - t->Y[left]);
+            zLeftEnd = t->Z[left] + tPropLeft * (t->Z[topOrBottom] - t->Z[left]);
+
+            tPropRight = (r - t->Y[right]) / (t->Y[topOrBottom] - t->Y[right]);
+            zRightEnd = t->Z[right] + tPropRight * (t->Z[topOrBottom] - t->Z[right]);
+
+            // interpolate color at left and right ends 
+            colorLeftEnd[0] = t->colors[left][0] + tPropLeft * (t->colors[topOrBottom][0] - t->colors[left][0]);
+            colorLeftEnd[1] = t->colors[left][1] + tPropLeft * (t->colors[topOrBottom][1] - t->colors[left][1]);
+            colorLeftEnd[2] = t->colors[left][2] + tPropLeft * (t->colors[topOrBottom][2] - t->colors[left][2]);
+
+            colorRightEnd[0] = t->colors[right][0] + tPropRight * (t->colors[topOrBottom][0] - t->colors[right][0]);  
+            colorRightEnd[1] = t->colors[right][1] + tPropRight * (t->colors[topOrBottom][1] - t->colors[right][1]);
+            colorRightEnd[2] = t->colors[right][2] + tPropRight * (t->colors[topOrBottom][2] - t->colors[right][2]);
+           
+            if (DEBUG) printf("Calculated zLeft as %f + %f * (%f-%f)\n", t->Z[left], tPropLeft, t->Z[topOrBottom], t->Z[left]);
+            if (DEBUG) printf("Calculated rLeft as %f + %f * (%f-%f)\n", t->colors[left][0], tPropLeft, t->colors[topOrBottom][0], t->colors[left][0]);
+            if (DEBUG) printf("Calculated rRight as %f + %f * (%f-%f)\n", t->colors[right][0], tPropRight, t->colors[topOrBottom][0], t->colors[right][0]);
+            
+            if (DEBUG)
+            {
+                printf("\tRasterizing along row %d with left end = %f (Z: %f, RGB = %f/%f/%f)", r, leftEnd, zLeftEnd, colorLeftEnd[0], colorLeftEnd[1], colorLeftEnd[2]);
+                printf(" and right end = %f (Z: %f, RGB = %f/%f/%f)\n", rightEnd, zRightEnd, colorRightEnd[0], colorRightEnd[1], colorRightEnd[2]);
+            }
 
             for (int c = leftIntercept; c <= rightIntercept; c++)
-            {
-                tProp = (c - leftEnd) / (rightEnd - leftEnd);
-                zPixel = zLeftEnd + tProp * (zRightEnd - zLeftEnd);  
-                ColorPixel(img, r, c, t->colors[0][0], t->colors[0][1], t->colors[0][2], zPixel);
+            { 
+                tPropPixel = (c - leftEnd) / (rightEnd - leftEnd);
+                if (rightEnd != leftEnd)
+                {
+                    zPixel = zLeftEnd + tPropPixel * (zRightEnd - zLeftEnd);
+                    colorPixel[0] = colorLeftEnd[0] + tPropPixel * (colorRightEnd[0] - colorLeftEnd[0]);
+                    colorPixel[1] = colorLeftEnd[1] + tPropPixel * (colorRightEnd[1] - colorLeftEnd[1]);
+                    colorPixel[2] = colorLeftEnd[2] + tPropPixel * (colorRightEnd[2] - colorLeftEnd[2]);
+                }
+                else
+                {
+                    zPixel = zRightEnd;
+                    colorPixel[0] = colorRightEnd[0];
+                    colorPixel[1] = colorRightEnd[1];
+                    colorPixel[2] = colorRightEnd[2];
+                }
+
+                if (DEBUG)
+                {
+                    printf("\t\tGot fragment r = %d, c = %d, z = %f, color = %f/%f/%f\n", r, c, zPixel, colorPixel[0], colorPixel[1], colorPixel[2]);
+                }
+
+                //ColorPixel(img, r, c, t->colors[0][0], t->colors[0][1], t->colors[0][2], zPixel);
+                ColorPixel(img, r, c, colorPixel[0], colorPixel[1], colorPixel[2], zPixel);
             }
         }
     }
