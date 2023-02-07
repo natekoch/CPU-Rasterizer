@@ -20,10 +20,18 @@ double F441(double f)
 
 typedef struct
 {
+    double          A[4][4];     // A[i][j] means row i, column j
+} Matrix;
+
+typedef struct
+{
     double  X[3];
     double  Y[3];
     double  Z[3];
     double  colors[3][3];
+#ifdef NORMALS
+    double  normals[3][3]; // normals[2][0] is for V2, x-component
+#endif
 } Triangle;
 
 typedef struct
@@ -44,42 +52,71 @@ typedef struct
     double *zbuffer;
 } Image;
 
-void WritePNM(Image *img);
+typedef struct
+{
+    double          near, far;
+    double          angle;
+    double          position[3];
+    double          focus[3];
+    double          up[3];
+} Camera;
+
+void PrintMatrix(Matrix m);
+
+Matrix ComposeMatrices(Matrix M1, Matrix M2);
+
+void TransformPoint(Matrix m, const double *ptIn, double *ptOut);
+
+double SineParameterize(int curFrame, int nFrames, int ramp);
+
+Camera GetCamera(int frame, int nframes);
+
+Image* AllocateScreen(int width, int height);
+
+void InitializeScreen(Image *img);
+
+void SaveImage(Image *img, char *filename);
 
 void ColorPixel(Image *img, int row, int col, double R, double G, double B, double Z);
+
+char * Read3Numbers(char *tmp, double *v1, double *v2, double *v3);
 
 TriangleList* Get3DTriangles(void);
 
 void RasterizeTriangle(Triangle *t, Image *img);
 
-int main(void)
+void TransformAndRenderTriangles(Camera c, TriangleList *tl, Image *img);
+
+Matrix GetViewTransform(Camera c);
+
+Matrix GetCameraTransform(Camera c);
+
+Matrix GetDeviceTransform(Camera c, double n, double m);
+
+int
+main(void)
 {
-    // Create the Image struct
-    Image *img = NULL;
-
-    img = malloc(sizeof(Image));
-    img->x = 1000;
-    img->y = 1000;
-    img->data = malloc(sizeof(Pixel) * img->x * img->y);
-    memset(img->data, 0, sizeof(Pixel) * img->x * img->y); 
-    img->zbuffer = malloc(sizeof(double) * img->x * img->y);
-    for (int i = 0; i < img->x*img->y; i++) img->zbuffer[i] = -1;
-
-    // Rasterize the triangles
-    TriangleList* tl = NULL;
-
-    tl = Get3DTriangles();
+    char filename[21];
     
-    
-    for (int i = 0; i < tl->numTriangles; i++)
-        RasterizeTriangle(tl->triangles+i, img);
+    TriangleList *tl = Get3DTriangles();
+    Image *img = AllocateScreen(1000, 1000);
+    for (int i = 0; i < 1000; i++)
+    {
+        if (i % 250 != 0) continue;
 
+        printf("Frame %04d:\n", i);
+
+        InitializeScreen(img);
+        Camera c = GetCamera(i, 1000);
+        TransformAndRenderTriangles(c, tl, img);
+        sprintf(filename, "proj1E_frame%04d.pnm", i);
+        SaveImage(img, filename);
+    }
+
+    // TODO: free data
     free(tl->triangles);
     free(tl);
 
-    // Format and create the PNM file
-    WritePNM(img);    
-    
     free(img->data);
     free(img->zbuffer);
     free(img);
@@ -87,9 +124,118 @@ int main(void)
     return 0; 
 }
 
-void WritePNM(Image *img) 
+void
+PrintMatrix(Matrix m)
 {
-    FILE *pnm = fopen("proj1D_out.pnm", "wb");
+    for (int i = 0 ; i < 4 ; i++)
+    {
+        printf("(%.7f %.7f %.7f %.7f)\n", m.A[i][0], m.A[i][1], m.A[i][2], m.A[i][3]);
+    }
+}
+
+Matrix
+ComposeMatrices(Matrix M1, Matrix M2)
+{
+    Matrix m_out;
+    for (int i = 0 ; i < 4 ; i++)
+        for (int j = 0 ; j < 4 ; j++)
+        {
+            m_out.A[i][j] = 0;
+            for (int k = 0 ; k < 4 ; k++)
+                m_out.A[i][j] += M1.A[i][k]*M2.A[k][j];
+        }
+    return m_out;
+}
+
+void 
+TransformPoint(Matrix m, const double *ptIn, double *ptOut)
+{  
+    ptOut[0] = ptIn[0]*m.A[0][0]
+             + ptIn[1]*m.A[1][0]
+             + ptIn[2]*m.A[2][0]
+             + ptIn[3]*m.A[3][0];
+    ptOut[1] = ptIn[0]*m.A[0][1]
+             + ptIn[1]*m.A[1][1]
+             + ptIn[2]*m.A[2][1]
+             + ptIn[3]*m.A[3][1];
+    ptOut[2] = ptIn[0]*m.A[0][2]
+             + ptIn[1]*m.A[1][2]
+             + ptIn[2]*m.A[2][2]
+             + ptIn[3]*m.A[3][2];
+    ptOut[3] = ptIn[0]*m.A[0][3]
+             + ptIn[1]*m.A[1][3]
+             + ptIn[2]*m.A[2][3]
+             + ptIn[3]*m.A[3][3];
+}
+
+double SineParameterize(int curFrame, int nFrames, int ramp)
+{  
+    int nNonRamp = nFrames-2*ramp;
+    double height = 1./(nNonRamp + 4*ramp/M_PI);
+    if (curFrame < ramp)
+    {
+        double factor = 2*height*ramp/M_PI;
+        double eval = cos(M_PI/2*((double)curFrame)/ramp);
+        return (1.-eval)*factor;
+    }
+    else if (curFrame > nFrames-ramp)
+    {        
+        int amount_left = nFrames-curFrame;
+        double factor = 2*height*ramp/M_PI;
+        double eval =cos(M_PI/2*((double)amount_left/ramp));
+        return 1. - (1-eval)*factor;
+    }        
+    double amount_in_quad = ((double)curFrame-ramp);
+    double quad_part = amount_in_quad*height;
+    double curve_part = height*(2*ramp)/M_PI;
+    return quad_part+curve_part;
+} 
+
+Camera       
+GetCamera(int frame, int nframes)
+{            
+    double t = SineParameterize(frame, nframes, nframes/10);
+    Camera c;
+    c.near = 5;
+    c.far = 200;
+    c.angle = M_PI/6;
+    c.position[0] = 40*sin(2*M_PI*t);
+    c.position[1] = 40*cos(2*M_PI*t);
+    c.position[2] = 40;
+    c.focus[0] = 0; 
+    c.focus[1] = 0; 
+    c.focus[2] = 0;
+    c.up[0] = 0;    
+    c.up[1] = 1;    
+    c.up[2] = 0;    
+    return c;       
+}
+
+Image* 
+AllocateScreen(int width, int height)
+{    
+    Image *img;
+    img = malloc(sizeof(Image));
+    img->x = width;
+    img->y = height;
+    img->data = malloc(sizeof(Pixel) * img->x * img->y);
+    img->zbuffer = malloc(sizeof(double) * img->x * img->y);
+    return img;
+}
+
+void 
+InitializeScreen(Image *img)
+{
+    // initialize img data to all zeros
+    memset(img->data, 0, sizeof(Pixel) * img->x * img->y); 
+    // initial z buffer to all -1
+    for (int i = 0; i < img->x*img->y; i++) img->zbuffer[i] = -1;
+}
+
+void 
+SaveImage(Image *img, char *filename) 
+{
+    FILE *pnm = fopen(filename, "wb");
 
     if (pnm == NULL) 
     {
@@ -105,7 +251,8 @@ void WritePNM(Image *img)
     fclose(pnm);
 }
 
-void ColorPixel(Image *img, int row, int col, double R, double G, double B, double Z)
+void 
+ColorPixel(Image *img, int row, int col, double R, double G, double B, double Z)
 {
     // check if row or column is off the screen
     if (row < 0 || row >= img->y || 
@@ -128,39 +275,37 @@ void ColorPixel(Image *img, int row, int col, double R, double G, double B, doub
 }
 
 char *
-ReadTuple3(char *tmp, double *v1, double *v2, double *v3)
+Read3Numbers(char *tmp, double *v1, double *v2, double *v3)
 {
-    tmp++; /* left paren */
     *v1 = atof(tmp);
-    while (*tmp != ',')
+    while (*tmp != ' ')
        tmp++;
-    tmp += 2; // comma+space
+    tmp++; /* space */
     *v2 = atof(tmp);
-    while (*tmp != ',')
+    while (*tmp != ' ')
        tmp++;
-    tmp += 2; // comma+space
+    tmp++; /* space */
     *v3 = atof(tmp);
-    while (*tmp != ')')
+    while (*tmp != ' ' && *tmp != '\n')
        tmp++;
-    tmp++; /* right paren */
     return tmp;
 }
 
 TriangleList *
 Get3DTriangles()
 {
-   FILE *f = fopen("tris_w_r_rgb.txt", "r");
+   FILE *f = fopen("ws_tris.txt", "r");
    if (f == NULL)
    {
-       fprintf(stderr, "You must place the tris_w_r_rgb.txt file in the current directory.\n");
+       fprintf(stderr, "You must place the ws_tris.txt file in the current directory.\n");
        exit(EXIT_FAILURE);
    }
    fseek(f, 0, SEEK_END);
    int numBytes = ftell(f);
    fseek(f, 0, SEEK_SET);
-   if (numBytes != 13488634)
+   if (numBytes != 3892295)
    {
-       fprintf(stderr, "Your tris_w_r_rgb.txt file is corrupted.  It should be 13488634 bytes, but you have %d.\n", numBytes);
+       fprintf(stderr, "Your ws_tris.txt file is corrupted.  It should be 3892295 bytes, but you have %d.\n", numBytes);
        exit(EXIT_FAILURE);
    }
 
@@ -179,7 +324,7 @@ Get3DTriangles()
        tmp++;
    tmp++;
  
-   if (numTriangles != 42281)
+   if (numTriangles != 14702)
    {
        fprintf(stderr, "Issue with reading file -- can't establish number of triangles.\n");
        exit(EXIT_FAILURE);
@@ -191,8 +336,11 @@ Get3DTriangles()
 
    for (int i = 0 ; i < tl->numTriangles ; i++)
    {
-       double x1, y1, z1, x2, y2, z2, x3, y3, z3;
-       double r[3], g[3], b[3];
+       for (int j = 0 ; j < 3 ; j++)
+       {
+           double x, y, z;
+           double r, g, b;
+           double normals[3];
 /*
  * Weird: sscanf has a terrible implementation for large strings.
  * When I did the code below, it did not finish after 45 minutes.
@@ -203,44 +351,62 @@ Get3DTriangles()
  *
  *  So, instead, do it all with atof/atoi and advancing through the buffer manually...
  */
-       tmp = ReadTuple3(tmp, &x1, &y1, &z1);
-       tmp += 3; /* space+equal+space */
-       tmp = ReadTuple3(tmp, r+0, g+0, b+0);
-       tmp += 2; /* comma+space */
-       tmp = ReadTuple3(tmp, &x2, &y2, &z2);
-       tmp += 3; /* space+equal+space */
-       tmp = ReadTuple3(tmp, r+1, g+1, b+1);
-       tmp += 2; /* comma+space */
-       tmp = ReadTuple3(tmp, &x3, &y3, &z3);
-       tmp += 3; /* space+equal+space */
-       tmp = ReadTuple3(tmp, r+2, g+2, b+2);
-       tmp++;    /* newline */
+           tmp = Read3Numbers(tmp, &x, &y, &z);
+           tmp += 3; /* space+slash+space */
+           tmp = Read3Numbers(tmp, &r, &g, &b);
+           tmp += 3; /* space+slash+space */
+           tmp = Read3Numbers(tmp, normals+0, normals+1, normals+2);
+           tmp++;    /* newline */
 
-       tl->triangles[i].X[0] = x1;
-       tl->triangles[i].X[1] = x2;
-       tl->triangles[i].X[2] = x3;
-       tl->triangles[i].Y[0] = y1;
-       tl->triangles[i].Y[1] = y2;
-       tl->triangles[i].Y[2] = y3;
-       tl->triangles[i].Z[0] = z1;
-       tl->triangles[i].Z[1] = z2;
-       tl->triangles[i].Z[2] = z3;
-       tl->triangles[i].colors[0][0] = r[0];
-       tl->triangles[i].colors[0][1] = g[0];
-       tl->triangles[i].colors[0][2] = b[0];
-       tl->triangles[i].colors[1][0] = r[1];
-       tl->triangles[i].colors[1][1] = g[1];
-       tl->triangles[i].colors[1][2] = b[1];
-       tl->triangles[i].colors[2][0] = r[2];
-       tl->triangles[i].colors[2][1] = g[2];
-       tl->triangles[i].colors[2][2] = b[2];
+           tl->triangles[i].X[j] = x;
+           tl->triangles[i].Y[j] = y;
+           tl->triangles[i].Z[j] = z;
+           tl->triangles[i].colors[j][0] = r;
+           tl->triangles[i].colors[j][1] = g;
+           tl->triangles[i].colors[j][2] = b;
+#ifdef NORMALS
+           tl->triangles[i].normals[j][0] = normals[0];
+           tl->triangles[i].normals[j][1] = normals[1];
+           tl->triangles[i].normals[j][2] = normals[2];
+#endif
+       }
    }
 
    free(buffer);
    return tl;
 }
 
-void RasterizeTriangle(Triangle *t, Image *img)
+void
+crossProduct(const double *vecA, const double *vecB, double *vecC)
+{
+    vecC[0] = vecA[1] * vecB[2] - vecA[2] * vecB[1];
+    vecC[1] = vecA[2] * vecB[0] - vecA[0] * vecB[2];
+    vecC[2] = vecA[0] * vecB[1] - vecA[1] * vecB[0];
+}
+
+double
+dotProduct(const double *vecA, const double *vecB)
+{
+    double product = 0.0;
+    for (int i = 0; i < 3; i++)
+        product += vecA[i] * vecB[i];
+    return product;
+}
+
+void
+normalizeVector(const double *vecIn, double *vecOut)
+{   
+    double vecLength = sqrt((vecIn[0] * vecIn[0]) +
+                            (vecIn[1] * vecIn[1]) +
+                            (vecIn[2] * vecIn[2]));
+
+    vecOut[0] = vecIn[0]/vecLength;
+    vecOut[1] = vecIn[1]/vecLength;
+    vecOut[2] = vecIn[2]/vecLength;
+}
+
+void
+RasterizeTriangle(Triangle *t, Image *img)
 {
     for (int loop = 0; loop < 2; loop++)
     {
@@ -388,4 +554,146 @@ void RasterizeTriangle(Triangle *t, Image *img)
             }
         }
     }
+}
+
+void 
+TransformAndRenderTriangles(Camera c, TriangleList *tl, Image *img)
+{
+    Matrix cameraTransform = GetCameraTransform(c);
+    Matrix viewTransform = GetViewTransform(c);
+    Matrix deviceTransform = GetDeviceTransform(c, img->x, img->y);
+
+    Matrix M = ComposeMatrices(ComposeMatrices(cameraTransform, viewTransform), deviceTransform);
+
+    printf("Total transform\n");
+    PrintMatrix(M);
+
+    Triangle *newT = malloc(sizeof(Triangle));
+    double pointIn[4];
+    double newV[3][4];
+
+    for (int i = 0; i < tl->numTriangles; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            pointIn[0] = (tl->triangles+i)->X[j];
+            pointIn[1] = (tl->triangles+i)->Y[j];
+            pointIn[2] = (tl->triangles+i)->Z[j];
+            pointIn[3] = 1;
+            TransformPoint(M, pointIn, newV[j]);
+
+            // divide newV[j]'s x, y, & z by its w
+            newT->X[j] = newV[j][0] / newV[j][3];
+            newT->Y[j] = newV[j][1] / newV[j][3];
+            newT->Z[j] = newV[j][2] / newV[j][3];
+        }
+        
+        memcpy(newT->colors, (tl->triangles+i)->colors, sizeof(double)*3*3);
+
+        RasterizeTriangle(newT, img);
+    }
+    free(newT);
+}
+
+double
+cot(double a)
+{
+    return cos(a)/sin(a);
+}
+
+Matrix 
+GetViewTransform(Camera c)
+{
+    Matrix m;
+
+    double A[4][4] = 
+    {
+                    {cot(c.angle/2), 0, 0, 0},
+                    {0, cot(c.angle/2), 0, 0},
+                    {0, 0, (c.far+c.near)/(c.far-c.near), -1},
+                    {0, 0, (2*c.far*c.near)/(c.far-c.near), 0}
+    };
+
+    memcpy(m.A, A, sizeof(double)*4*4);
+
+    //printf("View Transform\n");
+    //PrintMatrix(m);
+    //printf("\n");
+
+    return m;
+}
+
+Matrix
+GetCameraTransform(Camera c)
+{   
+    Matrix rv;
+    
+    /* Construct camera frame */
+    double O[3];
+    memcpy(O, c.position, sizeof(double) * 3);
+    
+    double w[3];
+    w[0] = O[0] - c.focus[0];
+    w[1] = O[1] - c.focus[1];
+    w[2] = O[2] - c.focus[2];
+    
+    double u[3];
+    crossProduct(c.up, w, u);
+
+    double v[3];
+    crossProduct(w, u, v);
+
+    // Normalize vectors
+    double uN[3], vN[3], wN[3], ON[3];
+    normalizeVector(u, uN);
+    normalizeVector(v, vN);
+    normalizeVector(w, wN);
+    normalizeVector(O, ON);
+
+    /* Construct camera transform */
+    double t[3];
+    t[0] = 0 - ON[0];
+    t[1] = 0 - ON[1];
+    t[2] = 0 - ON[2];
+
+    double A[4][4] = 
+    { 
+                    {uN[0], vN[0], wN[0], 0},
+                    {uN[1], vN[1], wN[1], 0},
+                    {uN[2], vN[2], wN[2], 0},
+                    {dotProduct(u, t), dotProduct(v, t), dotProduct(w, t), 1}
+    };
+
+    memcpy(rv.A, A, sizeof(double)*4*4);
+    /*
+    printf("Camera Frame: U = %f, %f, %f\n", uN[0], uN[1], uN[2]);
+    printf("Camera Frame: V = %f, %f, %f\n", vN[0], vN[1], vN[2]);
+    printf("Camera Frame: W = %f, %f, %f\n", wN[0], wN[1], wN[2]);
+    printf("Camera Frame: O = %f, %f, %f\n", O[0], O[1], O[2]);    
+
+    printf("Camera Transform\n");
+    PrintMatrix(rv);
+    printf("\n");
+    */
+    return rv;
+}
+
+Matrix
+GetDeviceTransform(Camera c, double n, double m)
+{   
+    Matrix rv;
+
+    double A[4][4] = 
+    { 
+                    {n/2, 0, 0, 0},
+                    {0, m/2, 0, 0},
+                    {0, 0, 1, 0},
+                    {n/2, m/2, 0, 1}
+    };
+
+    memcpy(rv.A, A, sizeof(double)*4*4);
+
+    //printf("View Transform\n");
+    //PrintMatrix(rv);
+    return rv;
 }
