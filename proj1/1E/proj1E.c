@@ -104,8 +104,6 @@ main(void)
     {
         if (i % 250 != 0) continue;
 
-        printf("Frame %04d:\n", i);
-
         InitializeScreen(img);
         Camera c = GetCamera(i, 1000);
         TransformAndRenderTriangles(c, tl, img);
@@ -113,7 +111,6 @@ main(void)
         SaveImage(img, filename);
     }
 
-    // TODO: free data
     free(tl->triangles);
     free(tl);
 
@@ -371,7 +368,7 @@ Get3DTriangles()
 #endif
        }
    }
-
+   fclose(f);
    free(buffer);
    return tl;
 }
@@ -565,9 +562,6 @@ TransformAndRenderTriangles(Camera c, TriangleList *tl, Image *img)
 
     Matrix M = ComposeMatrices(ComposeMatrices(cameraTransform, viewTransform), deviceTransform);
 
-    printf("Total transform\n");
-    PrintMatrix(M);
-
     Triangle *newT = malloc(sizeof(Triangle));
     double pointIn[4];
     double newV[3][4];
@@ -616,10 +610,6 @@ GetViewTransform(Camera c)
 
     memcpy(m.A, A, sizeof(double)*4*4);
 
-    //printf("View Transform\n");
-    //PrintMatrix(m);
-    //printf("\n");
-
     return m;
 }
 
@@ -665,16 +655,7 @@ GetCameraTransform(Camera c)
     };
 
     memcpy(rv.A, A, sizeof(double)*4*4);
-    /*
-    printf("Camera Frame: U = %f, %f, %f\n", uN[0], uN[1], uN[2]);
-    printf("Camera Frame: V = %f, %f, %f\n", vN[0], vN[1], vN[2]);
-    printf("Camera Frame: W = %f, %f, %f\n", wN[0], wN[1], wN[2]);
-    printf("Camera Frame: O = %f, %f, %f\n", O[0], O[1], O[2]);    
-
-    printf("Camera Transform\n");
-    PrintMatrix(rv);
-    printf("\n");
-    */
+    
     return rv;
 }
 
@@ -693,7 +674,5 @@ GetDeviceTransform(Camera c, double n, double m)
 
     memcpy(rv.A, A, sizeof(double)*4*4);
 
-    //printf("View Transform\n");
-    //PrintMatrix(rv);
     return rv;
 }
