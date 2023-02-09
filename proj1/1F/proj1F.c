@@ -1,6 +1,7 @@
 /* proj1F.c
  * Author: Nate Koch
  * Date: 2/6/23
+ * LINK TO VIDEO: https://youtube.com/shorts/x2kGc2y-U8w
  */
 
 #include <stdio.h>
@@ -10,7 +11,7 @@
 
 #define NORMALS
 
-int DEBUG = 0;
+#define MOVIE_MODE 1
 
 double C441(double f)
 {
@@ -118,7 +119,7 @@ double CalculateShading(LightingParameters *lp, double *viewDirection, double *n
 int
 main(void)
 {
-    char filename[21];
+    char filename[28];
     
     TriangleList *tl = Get3DTriangles();
     Image *img = AllocateScreen(1000, 1000);
@@ -130,6 +131,7 @@ main(void)
         Camera c = GetCamera(i, 1000);
         TransformAndRenderTriangles(c, tl, img);
         sprintf(filename, "proj1F_frame%04d.pnm", i);
+        //sprintf(filename, "frames/proj1F_frame%04d.pnm", i);
         SaveImage(img, filename);
     }
 
@@ -610,8 +612,6 @@ TransformAndRenderTriangles(Camera c, TriangleList *tl, Image *img)
     
     LightingParameters lp = GetLighting(c);
 
-    if (DEBUG) printf("Calling GetLighting and got a light direction of %f, %f, %f\n", lp.lightDir[0], lp.lightDir[1], lp.lightDir[2]);
-
     Triangle *newT = malloc(sizeof(Triangle));
     double pointIn[4];
     double newV[3][4];
@@ -623,15 +623,6 @@ TransformAndRenderTriangles(Camera c, TriangleList *tl, Image *img)
 
     for (int i = 0; i < tl->numTriangles; i++)
     {
-        if (i == 10) DEBUG = 0;   
-        if (DEBUG) 
-        {
-            printf("Working on triangle %d\n", i);
-            printf("\t(%f, %f, %f), color = (%f,%f,%f)\n", (tl->triangles+i)->X[0], (tl->triangles+i)->Y[0], (tl->triangles+i)->Z[0], (tl->triangles+i)->colors[0][0], (tl->triangles+i)->colors[0][1], (tl->triangles+i)->colors[0][2]);
-            printf("\t(%f, %f, %f), color = (%f,%f,%f)\n", (tl->triangles+i)->X[1], (tl->triangles+i)->Y[1], (tl->triangles+i)->Z[1], (tl->triangles+i)->colors[1][0], (tl->triangles+i)->colors[1][1], (tl->triangles+i)->colors[1][2]);
-            printf("\t(%f, %f, %f), color = (%f,%f,%f)\n", (tl->triangles+i)->X[2], (tl->triangles+i)->Y[2], (tl->triangles+i)->Z[2], (tl->triangles+i)->colors[2][0], (tl->triangles+i)->colors[2][1], (tl->triangles+i)->colors[2][2]);
-
-        }
         for (int vertexId = 0; vertexId < 3; vertexId++)
         {
             pointIn[0] = (tl->triangles+i)->X[vertexId];
@@ -651,13 +642,6 @@ TransformAndRenderTriangles(Camera c, TriangleList *tl, Image *img)
 
             normalizeVector(viewDirection, viewDirectionNormal);
 
-            if (DEBUG) 
-            {
-                printf(" Working on vertex %d\n", vertexId);
-                printf("\t\tView dir for pt %f, %f, %f is %f, %f, %f\n", (tl->triangles+i)->X[vertexId], (tl->triangles+i)->Y[vertexId], (tl->triangles+i)->Z[vertexId], viewDirectionNormal[0], viewDirectionNormal[1], viewDirectionNormal[2]);
-                printf("\t\tNormal is %f, %f, %f\n", (tl->triangles+i)->normals[vertexId][0], (tl->triangles+i)->normals[vertexId][1], (tl->triangles+i)->normals[vertexId][2]);
-            }
-            
             (tl->triangles+i)->shadingValue[vertexId] = CalculateShading(&lp, viewDirectionNormal, (tl->triangles+i)->normals[vertexId]);
         
         }
@@ -802,17 +786,6 @@ CalculateShading(LightingParameters *lp, double *viewDirection, double *normal)
     
     shadingAmount = lp->Ka + diffuse + specular;
     
-    if (DEBUG)
-    {
-        printf("\t\tLdotN is %f\n", LdotN);
-        printf("\tDiffuse is %f\n", diffuse);
-        printf("\t\tReflection vector R is %f, %f, %f\n", reflectionNormal[0], reflectionNormal[1], reflectionNormal[2]);
-        printf("\t\tRdotV is %f\n", RdotV);
-        printf("\tSpecular component is %f\n", specular);
-        printf("\tTotal value for vertex is %f\n", shadingAmount);
-        
-    }
-
     return shadingAmount;
 }
 
