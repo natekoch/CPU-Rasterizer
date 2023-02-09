@@ -11,8 +11,6 @@
 
 #define NORMALS
 
-#define MOVIE_MODE 1
-
 double C441(double f)
 {
     return ceil(f-0.00001);
