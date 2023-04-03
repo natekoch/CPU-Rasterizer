@@ -26,3 +26,5 @@ https://www.youtube.com/shorts/x2kGc2y-U8w
 ## Part E
 ### Camera transformation.
 ![Part E Image](proj1E_frame_0000.png)
+
+Starter code files provided by Hank Childs at the University of Oregon.
